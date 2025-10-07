@@ -21,10 +21,24 @@
 #define BUF_SIZE 6
 
 
+//only the flag, A and C are different in UA
 //What is received from UA
 #define FLAG_RCV 0x7E
 #define A_RCV 0x01 //received from UA
 #define C_RCV 0x07 //received from UA
+
+int alarmEnabled = TRUE;
+int alarmCount = 0;
+
+// Alarm function handler.
+// This function will run whenever the signal SIGALRM is received.
+void alarmHandler(int signal)
+{
+    // Can be used to change a flag that increases the number of alarms
+    alarmEnabled = FALSE;
+    alarmCount++;
+    printf("Alarm #%d received\n", alarmCount);
+}
 
 
 unsigned char FLAG = 0x7E;
@@ -49,31 +63,35 @@ int closeSerialPort();
 int readByteSerialPort(unsigned char *byte);
 int writeBytesSerialPort(const unsigned char *bytes, int nBytes);
 
-// Alarm
-int alarmEnabled = FALSE;
-int alarmCount = 0;
-
-// Alarm function handler - called when alarm is triggered
-void alarmHandler(int signal)
-{
-    alarmEnabled = FALSE;
-    alarmCount++;
-    printf("Alarm #%d received\n", alarmCount);
-}
 
 // ---------------------------------------------------
 // MAIN
 // ---------------------------------------------------
 int main(int argc, char *argv[])
 {
+    // set alarm
+    
+    // Set alarm function handler.
+    // Install the function signal to be automatically invoked when the timer expires,
+    // invoking in its turn the user function alarmHandler
+    struct sigaction act = {0};
+    act.sa_handler = &alarmHandler;
+    if (sigaction(SIGALRM, &act, NULL) == -1)
+    {
+        perror("sigaction");
+        exit(1);
+    }
 
+    //activate alarm
+    int t = 3;
+    alarm(t);
 
     //created main string to send
     unsigned char buf_set[5];
     buf_set[0] = FLAG;
     buf_set[1] = A_EMISSOR;
     buf_set[2] = C_SET;
-    buf_set[3] = (A_EMISSOR^C_SET);
+    buf_set[3] = (A_EMISSOR ^ C_SET);
     buf_set[4] = FLAG;
 
     if (argc < 2)
@@ -100,16 +118,7 @@ int main(int argc, char *argv[])
 
     printf("Serial port %s opened\n", serialPort);
 
-    // Set alarm function handler.
-    // Install the function signal to be automatically invoked when the timer expires,
-    // invoking in its turn the user function alarmHandler
-    struct sigaction act = {0};
-    act.sa_handler = &alarmHandler;
-    if (sigaction(SIGALRM, &act, NULL) == -1)
-    {
-        perror("sigaction");
-        exit(1);
-    }
+
 
 
     /*
@@ -137,8 +146,9 @@ int main(int argc, char *argv[])
     int nBytesBuf = 0;
 
     int state = UA_START_STATE;
-    while (state != UA_STOP_STATE /*alarmCount < 4*/)
+    while (state != UA_STOP_STATE && alarmCount < 3)
     {        
+        //printf("Entrou while loop\n");
         // Read one byte from serial port.
         // NOTE: You must check how many bytes were actually read by reading the return value.
         // In this example, we assume that the byte is always read, which may not be true.
@@ -154,45 +164,59 @@ int main(int argc, char *argv[])
                 state = UA_FLAG_RCV_STATE;
                 printf("Recebeu flag\n");
             } else{
+                printf("Recebeu outra coisa, volta ao início\n");
                 state = UA_START_STATE;
             }
             break;
         case UA_FLAG_RCV_STATE:
             if(byte == FLAG_RCV){
                 state = UA_FLAG_RCV_STATE;
+                printf("Recebeu flag igual\n");
             } else if (byte == A_RCV){
                 state = UA_A_RCV_STATE;
+                printf("Recebeu A\n");
             } else {
+                printf("Recebeu outra coisa, volta ao início\n");
                 state = UA_START_STATE;
             }
             break;
         case UA_A_RCV_STATE:
             if(byte == FLAG_RCV){
-                state == UA_FLAG_RCV_STATE;
+                printf("Recebeu flag\n");
+                state = UA_FLAG_RCV_STATE;
             } else if (byte == C_RCV){
-                state == UA_C_RCV_STATE;
+                printf("Recebeu C\n");
+                state = UA_C_RCV_STATE;
             } else {
+                printf("Recebeu outra coisa, volta ao início\n");
                 state = UA_START_STATE;
             }
             break;
         case UA_C_RCV_STATE:
             if(byte == FLAG_RCV){
+                printf("Recebeu flag\n");
                 state = UA_FLAG_RCV_STATE;
-            } else if (byte == (A_EMISSOR ^ C_RCV)){
+            } else if (byte == (A_RCV ^ C_RCV)){
                 state = UA_BCC_OK_STATE;
+                printf("BCC correto!\n");
             } else {
+                printf("Recebeu outra coisa, volta ao início\n");
                 state = UA_START_STATE;
             }
             break;
         case UA_BCC_OK_STATE:
             if(byte == FLAG_RCV){
+                printf("Recebe flag final\n");
                 state = UA_STOP_STATE;
             } else {
+                printf("Recebeu outra coisa, volta ao início\n");
                 state = UA_START_STATE;
             }
             break;
         case UA_STOP_STATE:
+            alarm(0); //deactivates alarm
             state = UA_START_STATE;
+            printf("Recebeu tudo, a sair...\n");
             break;
         }
 
