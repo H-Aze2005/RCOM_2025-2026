@@ -84,6 +84,22 @@ int main(int argc, char *argv[])
     
     if (receiveSupervisionFrame(A_TRANSMITTER, C_SET) == 0) {
         printf("SET frame received successfully!\n");
+        
+        // Send UA (Unnumbered Acknowledgment) frame as response
+        printf("Sending UA acknowledgment frame...\n");
+        unsigned char uaFrame[5];
+        uaFrame[0] = FLAG;
+        uaFrame[1] = A_RECEIVER;  // We are the receiver responding
+        uaFrame[2] = C_UA;        // UA control field
+        uaFrame[3] = A_RECEIVER ^ C_UA;  // BCC calculation
+        uaFrame[4] = FLAG;
+        
+        int bytesWritten = writeBytesSerialPort(uaFrame, 5);
+        if (bytesWritten == 5) {
+            printf("UA frame sent successfully (%d bytes)\n", bytesWritten);
+        } else {
+            printf("Error sending UA frame (sent %d bytes instead of 5)\n", bytesWritten);
+        }
     } else {
         printf("Error receiving SET frame\n");
     }
@@ -97,7 +113,7 @@ int main(int argc, char *argv[])
     int nBytesBuf = 0;
     unsigned char buf[BUF_SIZE];
 
-    while (STOP == FALSE)
+    while (STOP_STATE == FALSE)
     {
         // Read one byte from serial port.
         // NOTE: You must check how many bytes were actually read by reading the return value.
@@ -120,7 +136,7 @@ int main(int argc, char *argv[])
 
     printf("Total bytes received: %d\n", nBytesBuf);
 
-    writeBytesSerialPort(buf, nBytesBuf + 1);
+    //writeBytesSerialPort(buf, nBytesBuf + 1);
 
     // Close serial port
     if (closeSerialPort() < 0)
