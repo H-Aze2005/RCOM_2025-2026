@@ -149,74 +149,128 @@ int llopen(LinkLayer connectionParameters)
             /* code */
             if (byte == FLAG_RCV){
                 state = UA_FLAG_RCV_STATE;
-                printf("Recebeu flag\n");
             } else{
-                printf("Recebeu outra coisa, volta ao início\n");
                 state = UA_START_STATE;
             }
             break;
         case UA_FLAG_RCV_STATE:
             if(byte == FLAG_RCV){
                 state = UA_FLAG_RCV_STATE;
-                printf("Recebeu flag igual\n");
             } else if (byte == A_RCV){
                 state = UA_A_RCV_STATE;
-                printf("Recebeu A\n");
             } else {
-                printf("Recebeu outra coisa, volta ao início\n");
+
                 state = UA_START_STATE;
             }
             break;
         case UA_A_RCV_STATE:
             if(byte == FLAG_RCV){
-                printf("Recebeu flag\n");
                 state = UA_FLAG_RCV_STATE;
             } else if (byte == C_RCV){
-                printf("Recebeu C\n");
                 state = UA_C_RCV_STATE;
             } else {
-                printf("Recebeu outra coisa, volta ao início\n");
                 state = UA_START_STATE;
             }
             break;
         case UA_C_RCV_STATE:
             if(byte == FLAG_RCV){
-                printf("Recebeu flag\n");
                 state = UA_FLAG_RCV_STATE;
             } else if (byte == (A_RCV ^ C_RCV)){
                 state = UA_BCC_OK_STATE;
-                printf("BCC correto!\n");
             } else {
-                printf("Recebeu outra coisa, volta ao início\n");
                 state = UA_START_STATE;
             }
             break;
         case UA_BCC_OK_STATE:
             if(byte == FLAG_RCV){
-                printf("Recebe flag final\n");
                 state = UA_STOP_STATE;
             } else {
-                printf("Recebeu outra coisa, volta ao início\n");
                 state = UA_START_STATE;
             }
             break;
         case UA_STOP_STATE:
             alarm(0); //deactivates alarm
-            state = UA_START_STATE;
-            printf("Recebeu tudo, a sair...\n");
             break;
-        }
-
-        printf("%c", byte);
-
-        if (byte == '\n') {
-            printf("Received end of line");
-            STOP = TRUE;
         }
     }
         
-    } else if (connectionParameters.role == LlRx){//receiver
+    } else if (connectionParameters.role == LlRx) {//receiver
+        int state = SET_START_STATE; // Starting state for SET frame
+        unsigned char byte;
 
+        while (state != SET_STOP_STATE) {
+            // Read one byte from the serial port
+            if (readByteSerialPort(&byte) <= 0) {
+                continue; // No byte received, try again
+            }
+
+            switch (state) {
+                case SET_START_STATE:
+                    if (byte == FLAG_RCV) {
+                        state = SET_FLAG_RCV_STATE;
+                    }
+                    break;
+
+                case SET_FLAG_RCV_STATE:
+                    if (byte == A_TRANSMITTER) {
+                        state = SET_A_RCV_STATE;
+                    } else if (byte != FLAG_RCV) {
+                        state = SET_START_STATE; // Reset state if unexpected byte
+                    }
+                    break;
+
+                case SET_A_RCV_STATE:
+                    if (byte == C_SET) {
+                        state = SET_C_RCV_STATE;
+                    } else if (byte == FLAG_RCV) {
+                        state = SET_FLAG_RCV_STATE; // Go back to FLAG state
+                    } else {
+                        state = SET_START_STATE; // Reset state if unexpected byte
+                    }
+                    break;
+
+                case SET_C_RCV_STATE:
+                    if (byte == (A_TRANSMITTER ^ C_SET)) { // Check BCC1
+                        state = SET_BCC_OK_STATE;
+                    } else if (byte == FLAG_RCV) {
+                        state = SET_FLAG_RCV_STATE; // Go back to FLAG state
+                    } else {
+                        state = SET_START_STATE; // Reset state if BCC1 is incorrect
+                    }
+                    break;
+
+                case SET_BCC_OK_STATE:
+                    if (byte == FLAG_RCV) {
+                        state = SET_STOP_STATE; // End of frame detected
+                    } else {
+                        state = SET_START_STATE; // Reset state if unexpected byte
+                    }
+                    break;
+
+                case SET_STOP_STATE:
+                    // Should not reach here
+                    break;
+            }
+        }
+
+        // Send UA frame as a response
+        unsigned char uaFrame[5];
+        uaFrame[0] = FLAG;
+        uaFrame[1] = A_RCV; // Address field for receiver
+        uaFrame[2] = C_UA;  // Control field for UA
+        uaFrame[3] = (A_RCV ^ C_UA); // BCC1
+        uaFrame[4] = FLAG;
+
+        int bytesWritten = writeBytesSerialPort(uaFrame, sizeof(uaFrame));
+        if (bytesWritten != sizeof(uaFrame)) {
+            perror("Error sending UA frame");
+            return -1;
+        }
+
+        printf("UA frame sent successfully\n");
+    } else {
+        fprintf(stderr, "Invalid role specified\n");
+        return -1;
     }
 
     return 0;
