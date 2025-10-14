@@ -42,10 +42,16 @@ void alarmHandler(int signal)
 #define FLAG_RCV 0x7E
 #define A_RCV 0x01 //received from UA
 #define C_RCV 0x07 //received from UA
+#define A_TRANSMITTER 0x03
+#define C_SET 0x03
+#define C_UA 0x07
+#define C_DISC 0x0B
+#define C_I0 0x00
+#define C_I1 0x80
+#define ESC 0x7D
 
 unsigned char FLAG = 0x7E;
 unsigned char A_EMISSOR = 0x03;
-unsigned char C_SET = 0x03;
 
 typedef enum{
     UA_START_STATE,
@@ -64,6 +70,16 @@ typedef enum{
     SET_BCC_OK_STATE,
     SET_STOP_STATE
 } SETStateMachine;
+
+typedef enum {
+    START,        // Initial state, waiting for the FLAG byte
+    FLAG_RECEIVED,     // FLAG byte received
+    A_RECEIVED,        // Address field received
+    C_RECEIVED,        // Control field received
+    BCC_OK,       // BCC1 (Address ^ Control) verified
+    DATA,         // Receiving data bytes
+    STOP_STATE    // End of frame detected (final FLAG byte)
+} StateMachine;
 
 int fd = -1;           // File descriptor for open serial port
 struct termios oldtio; // Serial port settings to restore on closing
@@ -209,11 +225,134 @@ int llwrite(const unsigned char *buf, int bufSize)
 ////////////////////////////////////////////////
 // LLREAD
 ////////////////////////////////////////////////
-int llread(unsigned char *packet)
-{
-    // TODO: Implement this function
+int llread(unsigned char *packet) {
+    StateMachine state = START;
+    unsigned char byte;
+    unsigned char addressField = 0;
+    unsigned char controlField = 0;
+    unsigned char bcc1 = 0;
+    unsigned char bcc2 = 0;
+    unsigned char calculatedBcc2 = 0;
+    int dataIndex = 0;
 
-    return 0;
+    while (state != STOP_STATE) {
+        // Read one byte from the serial port
+        if (readByteSerialPort(&byte) <= 0) {
+            continue; // No byte received, try again
+        }
+
+        switch (state) {
+            case START:
+                if (byte == FLAG_RCV) {
+                    state = FLAG_RECEIVED;
+                }
+                break;
+
+            case FLAG_RECEIVED:
+                if (byte == A_TRANSMITTER || byte == A_RCV) {
+                    addressField = byte;
+                    state = A_RECEIVED;
+                } else if (byte == FLAG_RCV) {
+                    // Stay in FLAG_RECEIVED state
+                } else {
+                    state = START;
+                }
+                break;
+
+            case A_RECEIVED:
+                if (byte == C_I0 || byte == C_I1) {
+                    controlField = byte;
+                    bcc1 = addressField ^ controlField;
+                    state = C_RECEIVED;
+                } else if (byte == FLAG_RCV) {
+                    state = FLAG_RECEIVED;
+                } else {
+                    state = START;
+                }
+                break;
+
+            case C_RECEIVED:
+                if (byte == bcc1) {
+                    state = BCC_OK;
+                } else if (byte == FLAG_RCV) {
+                    state = FLAG_RECEIVED;
+                } else {
+                    state = START;
+                }
+                break;
+
+            case BCC_OK:
+                if (byte == FLAG_RCV) {
+                    // No data, supervision frame
+                    return 0;
+                } else {
+                    // Start of data
+                    if (byte == ESC) {
+                        // Read next byte for destuffing
+                        if (readByteSerialPort(&byte) <= 0) {
+                            state = START;
+                            continue;
+                        }
+                        byte ^= 0x20; // Destuff
+                    }
+                    packet[dataIndex++] = byte;
+                    calculatedBcc2 ^= byte;
+                    state = DATA;
+                }
+                break;
+
+            case DATA:
+                if (byte == FLAG_RCV) {
+                    // End of frame
+                    if (dataIndex > 0) {
+                        // Last byte should be BCC2
+                        bcc2 = packet[dataIndex - 1];
+                        dataIndex--; // Remove BCC2 from data
+                        calculatedBcc2 ^= bcc2; // Remove BCC2 from calculation
+
+                        if (calculatedBcc2 == 0) {
+                            // BCC2 is correct
+                            return dataIndex; // Return the size of the payload
+                        } else {
+                            // BCC2 error, reset
+                            state = START;
+                            dataIndex = 0;
+                            calculatedBcc2 = 0;
+                        }
+                    } else {
+                        state = START;
+                    }
+                } else {
+                    // Continue reading data
+                    if (byte == ESC) {
+                        // Read next byte for destuffing
+                        if (readByteSerialPort(&byte) <= 0) {
+                            state = START;
+                            dataIndex = 0;
+                            calculatedBcc2 = 0;
+                            continue;
+                        }
+                        byte ^= 0x20; // Destuff
+                    }
+                    if (dataIndex < MAX_PAYLOAD_SIZE) {
+                        packet[dataIndex++] = byte;
+                        calculatedBcc2 ^= byte;
+                    } else {
+                        // Packet too large, reset
+                        state = START;
+                        dataIndex = 0;
+                        calculatedBcc2 = 0;
+                    }
+                }
+                break;
+
+            case STOP_STATE:
+                // Should not reach here
+                break;
+        }
+    }
+
+    return -1; // Error
 }
 
 ////////////////////////////////////////////////
