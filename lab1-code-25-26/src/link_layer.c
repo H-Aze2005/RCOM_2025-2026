@@ -87,6 +87,16 @@ volatile int STOP = FALSE;
 
 int llopen(LinkLayer connectionParameters)
 {
+    
+    const char *serialPort = connectionParameters.serialPort;
+
+    if (openSerialPort(serialPort, BAUDRATE) < 0)
+    {
+        perror("openSerialPort");
+        exit(-1);
+    }
+
+    printf("Serial port %s opened\n", serialPort);
 
     // Set alarm function handler.
     // Install the function signal to be automatically invoked when the timer expires,
@@ -206,7 +216,7 @@ int llopen(LinkLayer connectionParameters)
     }
         
     } else if (connectionParameters.role == LlRx){//receiver
-        
+
     }
 
     return 0;
