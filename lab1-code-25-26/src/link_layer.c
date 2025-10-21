@@ -281,7 +281,49 @@ int llopen(LinkLayer connectionParameters)
 ////////////////////////////////////////////////
 int llwrite(const unsigned char *buf, int bufSize)
 {
-    // TODO: Implement this function
+    static unsigned char sequenceNum = 0;
+    // will use this buf as data bytes in out Information Frame
+    // we need to build the Information packet
+    unsigned char InfFrame[6 + bufSize];
+    InfFrame[0] = FLAG_RCV; //first flag
+    InfFrame[1] = A_EMISSOR;
+    InfFrame[2] = (sequenceNum << 7);// 0x00 for I(0) and 0x80 for I(1)
+    InfFrame[3] = (A_EMISSOR ^ sequenceNum);
+
+    unsigned char BCC2 = 0x00;
+    
+    for(int i = 4; i <= 3 + bufSize; i++){
+        InfFrame[i] = buf[i - 4];
+        BCC2 ^= InfFrame[i];
+    }
+
+    InfFrame[4 + bufSize] = BCC2;
+    InfFrame[5 + bufSize] = FLAG_RCV; 
+    
+
+    // Byte Stuffing
+    // if we see Flag inside data then it is replaced by ESC 0x5e, 0x5e is 0X7E ^ 0x20
+    // if we find ESC inside data then it is replaced by ESC 0x5d, 0x5d id 0x7D ^ 0x20
+    unsigned char newBuf[2 * (6 + bufSize)]; //new buffer  needs to be created to store the new octets from the byte stuffing
+    int stuffedIndex = 0;
+
+    newBuf[stuffedIndex++] = InfFrame[0];
+
+    for (int i = 4; i <= (6 + bufSize) - 2; i++){ //iterate over the new buffer, goes from D1 to BCC2 (inclusive)
+        if(InfFrame[i] == FLAG_RCV){
+            newBuf[stuffedIndex++] = ESC;
+            newBuf[stuffedIndex++] = ESC ^ InfFrame[i];
+        } else if (InfFrame[i] == ESC){
+            newBuf[stuffedIndex++] = ESC;
+            newBuf[stuffedIndex++] = ESC ^ InfFrame[i];
+        } else {
+            newBuf[stuffedIndex++] = InfFrame[i];
+        }
+    }
+    newBuf[stuffedIndex++] = FLAG_RCV;
+
+    sequenceNum ^= 1; //alternate between 0x00 and 0x80
+    
 
     return 0;
 }
