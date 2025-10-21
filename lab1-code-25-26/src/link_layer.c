@@ -322,6 +322,12 @@ int llwrite(const unsigned char *buf, int bufSize)
     }
     newBuf[stuffedIndex++] = FLAG_RCV;
 
+    int bytes = writeBytesSerialPort(newBuf, 2*(6 + bufSize));
+        printf("%d bytes written to serial port\n", bytes);
+    
+    // Wait until all bytes have been written to the serial port
+    sleep(1);
+
     sequenceNum ^= 1; //alternate between 0x00 and 0x80
     
 
