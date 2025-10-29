@@ -9,6 +9,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <signal.h>
+#include <time.h>
 
 // Frame delimiters and control bytes
 #define FRAME_FLAG 0x7E
@@ -251,119 +252,351 @@ int llopen(LinkLayer connectionParameters) {
 }
 
 int llwrite(const unsigned char *buf, int bufSize) {
-    unsigned char frame[2 * bufSize + 10];
+    if (bufSize <= 0 || bufSize > MAX_PAYLOAD_SIZE) {
+        return -1;
+    }
+    
+    unsigned char frame[MAX_PAYLOAD_SIZE * 2 + 10];
     int frame_size = build_information_frame(buf, bufSize, frame);
     
-    configure_alarm_handler();
-    conn_state.retry_count = 0;
+    if (frame_size < 0) {
+        return -1;
+    }
     
-    while (conn_state.retry_count < conn_state.max_retries) {
-        if (write(conn_state.fd, frame, frame_size) != frame_size) {
-            return -1;
+    configure_alarm_handler();
+    
+    for (conn_state.retry_count = 0; conn_state.retry_count < conn_state.max_retries; 
+         conn_state.retry_count++) {
+        
+        // Send frame
+        int bytes_written = write(conn_state.fd, frame, frame_size);
+        if (bytes_written != frame_size) {
+            printf("Write error: sent %d/%d bytes\n", bytes_written, frame_size);
+            continue;
         }
         
+        // Wait for response
         conn_state.alarm_triggered = 0;
         alarm(conn_state.timeout_duration);
         
-        unsigned char response_ctrl;
-        if (receive_supervision_frame(conn_state.fd, CTRL_RR(!conn_state.current_sequence)) == 0) {
-            alarm(0);
-            conn_state.current_sequence = !conn_state.current_sequence;
-            return bufSize;
+        unsigned char response[5];
+        int response_idx = 0;
+        time_t start_time = time(NULL);
+        
+        while (!conn_state.alarm_triggered) {
+            unsigned char byte;
+            if (read(conn_state.fd, &byte, 1) == 1) {
+                response[response_idx++] = byte;
+                
+                // Check if we have a complete supervision frame
+                if (response_idx == 5 && response[4] == FRAME_FLAG) {
+                    alarm(0);
+                    
+                    unsigned char addr = response[1];
+                    unsigned char ctrl = response[2];
+                    unsigned char bcc = response[3];
+                    
+                    // Verify BCC
+                    if (bcc != (addr ^ ctrl)) {
+                        break; // Invalid frame, will retry
+                    }
+                    
+                    // Check for RR with correct sequence
+                    if (ctrl == CTRL_RR(!conn_state.current_sequence)) {
+                        conn_state.current_sequence = !conn_state.current_sequence;
+                        return bufSize;
+                    }
+                    
+                    // Check for REJ - resend immediately
+                    if (ctrl == CTRL_REJ(conn_state.current_sequence)) {
+                        printf("Received REJ, retrying...\n");
+                        break;
+                    }
+                }
+                
+                // Reset if we get a FLAG in the middle
+                if (byte == FRAME_FLAG && response_idx < 5) {
+                    response[0] = byte;
+                    response_idx = 1;
+                }
+            }
+            
+            // Timeout check
+            if (difftime(time(NULL), start_time) > conn_state.timeout_duration) {
+                break;
+            }
         }
         
-        if (conn_state.alarm_triggered) {
-            conn_state.retry_count++;
-        }
+        alarm(0);
+        printf("Timeout or error on attempt %d/%d\n", 
+               conn_state.retry_count + 1, conn_state.max_retries);
     }
     
+    printf("Failed to send frame after %d attempts\n", conn_state.max_retries);
     return -1;
 }
-
 int llread(unsigned char *packet) {
-    unsigned char frame[MAX_PAYLOAD_SIZE * 2];
+    unsigned char frame[MAX_PAYLOAD_SIZE * 2 + 10];
     int frame_idx = 0;
     unsigned char byte;
-    enum { WAIT_FLAG, READ_HEADER, READ_DATA } state = WAIT_FLAG;
+    int in_escape = 0;
+    
+    enum { WAIT_START_FLAG, READ_ADDR, READ_CTRL, READ_BCC1, READ_DATA, CHECK_END_FLAG } state = WAIT_START_FLAG;
+    
+    unsigned char addr, ctrl, bcc1;
     
     while (1) {
-        if (read(conn_state.fd, &byte, 1) != 1) continue;
+        if (read(conn_state.fd, &byte, 1) != 1) {
+            continue;
+        }
         
         switch (state) {
-            case WAIT_FLAG:
+            case WAIT_START_FLAG:
                 if (byte == FRAME_FLAG) {
-                    frame[frame_idx++] = byte;
-                    state = READ_HEADER;
-                }
-                break;
-            case READ_HEADER:
-                frame[frame_idx++] = byte;
-                if (frame_idx == 4) state = READ_DATA;
-                break;
-            case READ_DATA:
-                frame[frame_idx++] = byte;
-                if (byte == FRAME_FLAG && frame_idx > 5) {
-                    int data_len = extract_frame_data(frame, frame_idx, packet);
-                    
-                    if (data_len >= 0) {
-                        unsigned char expected_ctrl = CTRL_INFO(conn_state.current_sequence);
-                        if (frame[2] == expected_ctrl) {
-                            transmit_supervision_frame(conn_state.fd, ADDR_RECEIVER, 
-                                                      CTRL_RR(!conn_state.current_sequence));
-                            conn_state.current_sequence = !conn_state.current_sequence;
-                            return data_len;
-                        }
-                    } else {
-                        transmit_supervision_frame(conn_state.fd, ADDR_RECEIVER,
-                                                  CTRL_REJ(conn_state.current_sequence));
-                    }
                     frame_idx = 0;
-                    state = WAIT_FLAG;
+                    in_escape = 0;
+                    state = READ_ADDR;
                 }
+                break;
+                
+            case READ_ADDR:
+                if (byte == FRAME_FLAG) {
+                    state = READ_ADDR; // Still waiting for address
+                } else {
+                    addr = byte;
+                    state = READ_CTRL;
+                }
+                break;
+                
+            case READ_CTRL:
+                if (byte == FRAME_FLAG) {
+                    state = WAIT_START_FLAG;
+                } else {
+                    ctrl = byte;
+                    state = READ_BCC1;
+                }
+                break;
+                
+            case READ_BCC1:
+                if (byte == FRAME_FLAG) {
+                    state = WAIT_START_FLAG;
+                } else {
+                    bcc1 = byte;
+                    // Verify BCC1
+                    if (bcc1 != (addr ^ ctrl)) {
+                        printf("BCC1 error\n");
+                        state = WAIT_START_FLAG;
+                    } else {
+                        // Check if this is a supervision frame (DISC, RR, REJ)
+                        if (ctrl == CTRL_DISC) {
+                            return 0; // Signal disconnection
+                        } else if ((ctrl & 0x0F) == 0x05 || (ctrl & 0x0F) == 0x01) {
+                            // RR or REJ - ignore in llread
+                            state = WAIT_START_FLAG;
+                        } else {
+                            state = READ_DATA;
+                        }
+                    }
+                }
+                break;
+                
+            case READ_DATA:
+                if (byte == FRAME_FLAG) {
+                    // End of frame - destuff and verify BCC2
+                    if (frame_idx < 1) {
+                        state = WAIT_START_FLAG;
+                        break;
+                    }
+                    
+                    // Last byte should be BCC2
+                    unsigned char received_bcc2 = frame[frame_idx - 1];
+                    frame_idx--;
+                    
+                    // Calculate BCC2 on actual data
+                    unsigned char calculated_bcc2 = 0;
+                    for (int i = 0; i < frame_idx; i++) {
+                        calculated_bcc2 ^= frame[i];
+                    }
+                    
+                    if (calculated_bcc2 != received_bcc2) {
+                        printf("BCC2 error: expected 0x%02X, got 0x%02X\n", 
+                               calculated_bcc2, received_bcc2);
+                        // Send REJ
+                        transmit_supervision_frame(conn_state.fd, ADDR_RECEIVER, 
+                                                  CTRL_REJ(conn_state.current_sequence));
+                        state = WAIT_START_FLAG;
+                        break;
+                    }
+                    
+                    // Check sequence number
+                    unsigned char expected_ctrl = CTRL_INFO(conn_state.current_sequence);
+                    if (ctrl != expected_ctrl) {
+                        printf("Wrong sequence: expected %d, got %d\n", 
+                               conn_state.current_sequence, (ctrl >> 6) & 1);
+                        // Send RR for next expected
+                        transmit_supervision_frame(conn_state.fd, ADDR_RECEIVER,
+                                                  CTRL_RR(!conn_state.current_sequence));
+                        state = WAIT_START_FLAG;
+                        break;
+                    }
+                    
+                    // Success - copy data and send RR
+                    memcpy(packet, frame, frame_idx);
+                    transmit_supervision_frame(conn_state.fd, ADDR_RECEIVER,
+                                              CTRL_RR(!conn_state.current_sequence));
+                    conn_state.current_sequence = !conn_state.current_sequence;
+                    
+                    return frame_idx;
+                } else {
+                    // Handle byte stuffing
+                    if (in_escape) {
+                        frame[frame_idx++] = byte ^ 0x20;
+                        in_escape = 0;
+                    } else if (byte == ESCAPE_BYTE) {
+                        in_escape = 1;
+                    } else {
+                        frame[frame_idx++] = byte;
+                    }
+                    
+                    // Prevent buffer overflow
+                    if (frame_idx >= MAX_PAYLOAD_SIZE * 2) {
+                        printf("Frame too large\n");
+                        state = WAIT_START_FLAG;
+                    }
+                }
+                break;
+                
+            case CHECK_END_FLAG:
+                // Not used in this implementation
                 break;
         }
     }
     
     return -1;
 }
-
 int llclose(int showStatistics) {
     int result = -1;
     
     if (conn_state.role == LlTx) {
+        // Transmitter initiates disconnection
         configure_alarm_handler();
-        conn_state.retry_count = 0;
         
-        while (conn_state.retry_count < conn_state.max_retries) {
-            transmit_supervision_frame(conn_state.fd, ADDR_SENDER, CTRL_DISC);
+        for (conn_state.retry_count = 0; 
+             conn_state.retry_count < conn_state.max_retries; 
+             conn_state.retry_count++) {
             
+            printf("Sending DISC (attempt %d/%d)...\n", 
+                   conn_state.retry_count + 1, conn_state.max_retries);
+            
+            if (transmit_supervision_frame(conn_state.fd, ADDR_SENDER, CTRL_DISC) < 0) {
+                continue;
+            }
+            
+            // Wait for DISC response
             conn_state.alarm_triggered = 0;
             alarm(conn_state.timeout_duration);
             
-            if (receive_supervision_frame(conn_state.fd, CTRL_DISC) == 0) {
-                alarm(0);
+            unsigned char response[5];
+            int idx = 0;
+            int got_disc = 0;
+            
+            while (!conn_state.alarm_triggered && idx < 5) {
+                unsigned char byte;
+                if (read(conn_state.fd, &byte, 1) == 1) {
+                    response[idx++] = byte;
+                    
+                    if (idx == 5 && response[4] == FRAME_FLAG) {
+                        unsigned char ctrl = response[2];
+                        unsigned char bcc = response[3];
+                        
+                        if (bcc == (response[1] ^ ctrl) && ctrl == CTRL_DISC) {
+                            got_disc = 1;
+                            break;
+                        }
+                    }
+                    
+                    if (byte == FRAME_FLAG && idx < 5) {
+                        response[0] = byte;
+                        idx = 1;
+                    }
+                }
+            }
+            
+            alarm(0);
+            
+            if (got_disc) {
+                printf("Received DISC, sending UA...\n");
                 transmit_supervision_frame(conn_state.fd, ADDR_SENDER, CTRL_UA);
+                sleep(1); // Give receiver time to process
                 result = 0;
                 break;
             }
-            
-            if (conn_state.alarm_triggered) conn_state.retry_count++;
         }
+        
+        if (result != 0) {
+            printf("Failed to disconnect properly\n");
+        }
+        
     } else {
-        if (receive_supervision_frame(conn_state.fd, CTRL_DISC) == 0) {
-            transmit_supervision_frame(conn_state.fd, ADDR_RECEIVER, CTRL_DISC);
-            receive_supervision_frame(conn_state.fd, CTRL_UA);
-            result = 0;
+        // Receiver waits for DISC
+        printf("Waiting for DISC...\n");
+        
+        unsigned char response[5];
+        int idx = 0;
+        
+        while (idx < 5) {
+            unsigned char byte;
+            if (read(conn_state.fd, &byte, 1) == 1) {
+                response[idx++] = byte;
+                
+                if (idx == 5 && response[4] == FRAME_FLAG) {
+                    unsigned char ctrl = response[2];
+                    unsigned char bcc = response[3];
+                    
+                    if (bcc == (response[1] ^ ctrl) && ctrl == CTRL_DISC) {
+                        printf("Received DISC, sending DISC...\n");
+                        transmit_supervision_frame(conn_state.fd, ADDR_RECEIVER, CTRL_DISC);
+                        
+                        // Wait for UA
+                        idx = 0;
+                        while (idx < 5) {
+                            if (read(conn_state.fd, &byte, 1) == 1) {
+                                response[idx++] = byte;
+                                
+                                if (idx == 5 && response[4] == FRAME_FLAG) {
+                                    ctrl = response[2];
+                                    if (ctrl == CTRL_UA) {
+                                        printf("Received UA\n");
+                                        result = 0;
+                                    }
+                                    break;
+                                }
+                                
+                                if (byte == FRAME_FLAG && idx < 5) {
+                                    response[0] = byte;
+                                    idx = 1;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+                
+                if (byte == FRAME_FLAG && idx < 5) {
+                    response[0] = byte;
+                    idx = 1;
+                }
+            }
         }
+    }
+    
+    if (showStatistics) {
+        printf("\n=== Connection Statistics ===\n");
+        printf("Role: %s\n", conn_state.role == LlTx ? "Transmitter" : "Receiver");
+        printf("Total retries: %d\n", conn_state.retry_count);
+        printf("Status: %s\n", result == 0 ? "Success" : "Failed");
     }
     
     closeSerialPort(conn_state.fd);
-    
-    if (showStatistics) {
-        printf("=== Connection Statistics ===\n");
-        printf("Role: %s\n", conn_state.role == LlTx ? "Transmitter" : "Receiver");
-        printf("Retries used: %d/%d\n", conn_state.retry_count, conn_state.max_retries);
-    }
-    
     return result;
 }

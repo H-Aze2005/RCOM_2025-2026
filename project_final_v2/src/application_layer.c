@@ -146,47 +146,59 @@ static int send_file_contents(int fd, FILE *file, long file_size) {
 }
 
 static int receive_file_contents(int fd, FILE *file, long expected_size) {
-    unsigned char packet_buffer[MAX_PAYLOAD_SIZE];
-    unsigned char data_buffer[MAX_PAYLOAD_SIZE];
+    unsigned char packet_buffer[MAX_PAYLOAD_SIZE * 2];
     long bytes_received = 0;
-    int expected_seq = 0;
+    int timeout_count = 0;
+    const int MAX_TIMEOUTS = 10;
     
-    printf("Receiving file...\n");
+    printf("Receiving file data...\n");
     
-    while (bytes_received < expected_size) {
+    while (bytes_received < expected_size && timeout_count < MAX_TIMEOUTS) {
         int packet_len = llread(packet_buffer);
+        
         if (packet_len < 0) {
-            printf("Read error\n");
-            return -1;
+            timeout_count++;
+            printf("Read error/timeout %d/%d\n", timeout_count, MAX_TIMEOUTS);
+            continue;
         }
         
+        if (packet_len == 0) {
+            // Received DISC during data transfer
+            printf("Disconnection signal received\n");
+            break;
+        }
+        
+        // Check packet type
         if (packet_buffer[0] == PKT_TYPE_END) {
+            printf("Received END control packet\n");
             break;
         }
         
         if (packet_buffer[0] != PKT_TYPE_DATA) {
+            printf("Unexpected packet type: %d\n", packet_buffer[0]);
             continue;
         }
         
-        int seq_num;
-        int data_len = parse_data_packet(packet_buffer, packet_len, 
-                                        &seq_num, data_buffer);
+        // Parse data packet
+        int seq_num = packet_buffer[1];
+        int data_len = (packet_buffer[2] << 8) | packet_buffer[3];
         
-        if (data_len < 0) {
-            printf("Invalid data packet\n");
+        if (data_len + 4 > packet_len) {
+            printf("Invalid data length: %d (packet size: %d)\n", data_len, packet_len);
             continue;
         }
         
-        if (fwrite(data_buffer, 1, data_len, file) != (size_t)data_len) {
+        // Write to file
+        if (fwrite(&packet_buffer[4], 1, data_len, file) != (size_t)data_len) {
             perror("File write error");
             return -1;
         }
         
         bytes_received += data_len;
-        expected_seq = (seq_num + 1) % 256;
+        timeout_count = 0; // Reset timeout counter on success
         
-        if (bytes_received % 10240 == 0 || bytes_received >= expected_size) {
-            printf("\rProgress: %ld/%ld bytes (%.1f%%)", 
+        if (bytes_received % 4096 == 0 || bytes_received >= expected_size) {
+            printf("\rReceived: %ld/%ld bytes (%.1f%%)    ", 
                    bytes_received, expected_size,
                    (bytes_received * 100.0) / expected_size);
             fflush(stdout);
@@ -194,9 +206,14 @@ static int receive_file_contents(int fd, FILE *file, long expected_size) {
     }
     
     printf("\n");
-    return 0;
+    
+    if (bytes_received < expected_size) {
+        printf("Warning: Received %ld bytes, expected %ld\n", 
+               bytes_received, expected_size);
+    }
+    
+    return (bytes_received > 0) ? 0 : -1;
 }
-
 ////////////////////////////////////////////////
 // Public API
 ////////////////////////////////////////////////
