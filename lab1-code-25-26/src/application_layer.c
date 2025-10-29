@@ -9,13 +9,13 @@
 #include <sys/stat.h>
 
 // Control field values
-#define CTRL_DATA 0x01
-#define CTRL_START 0x02
+#define CTRL_DATA 0x02
+#define CTRL_START 0x01
 #define CTRL_END 0x03
 
 // TLV (Type-Length-Value) types
-#define TLV_FILE_SIZE 0x00
-#define TLV_FILE_NAME 0x01
+#define TLV_FILE_SIZE 0x00 //type file fize
+#define TLV_FILE_NAME 0x01 //type file name
 
 // Maximum packet data size
 #define MAX_DATA_SIZE 1000
@@ -24,6 +24,7 @@
  * Build a control packet (START or END)
  * Returns the packet size
  */
+ 
 int buildControlPacket(unsigned char *packet, unsigned char controlField, 
                        const char *filename, long fileSize) {
     int index = 0;
