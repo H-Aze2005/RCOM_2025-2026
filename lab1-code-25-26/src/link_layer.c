@@ -470,9 +470,256 @@ int llread(unsigned char *packet) {
 ////////////////////////////////////////////////
 // LLCLOSE
 ////////////////////////////////////////////////
-int llclose()
+int llclose(LinkLayer connectionParameters)
 {
-    // TODO: Implement this function
+    if (connectionParameters.role == LlTx) { // Transmitter
+        // Set alarm function handler
+        struct sigaction act = {0};
+        act.sa_handler = &alarmHandler;
+        if (sigaction(SIGALRM, &act, NULL) == -1)
+        {
+            perror("sigaction");
+            return -1;
+        }
 
+        // Reset alarm counters
+        alarmCount = 0;
+        alarmEnabled = TRUE;
+
+        // Send DISC frame
+        unsigned char discFrame[5];
+        discFrame[0] = FLAG;
+        discFrame[1] = A_EMISSOR;
+        discFrame[2] = C_DISC;
+        discFrame[3] = (A_EMISSOR ^ C_DISC);
+        discFrame[4] = FLAG;
+
+        int attempts = 0;
+        int maxAttempts = connectionParameters.nRetransmissions;
+        
+        while (attempts < maxAttempts) {
+            // Send DISC
+            int bytes = writeBytesSerialPort(discFrame, 5);
+            printf("DISC frame sent (%d bytes)\n", bytes);
+
+            // Set alarm
+            alarm(connectionParameters.timeout);
+            alarmEnabled = TRUE;
+
+            // Wait for DISC response from receiver
+            int state = UA_START_STATE;
+            unsigned char byte;
+            int discReceived = FALSE;
+
+            while (state != UA_STOP_STATE && alarmEnabled) {
+                if (readByteSerialPort(&byte) <= 0) {
+                    continue;
+                }
+
+                switch (state) {
+                    case UA_START_STATE:
+                        if (byte == FLAG_RCV) {
+                            state = UA_FLAG_RCV_STATE;
+                        }
+                        break;
+                    case UA_FLAG_RCV_STATE:
+                        if (byte == FLAG_RCV) {
+                            state = UA_FLAG_RCV_STATE;
+                        } else if (byte == A_RCV) {
+                            state = UA_A_RCV_STATE;
+                        } else {
+                            state = UA_START_STATE;
+                        }
+                        break;
+                    case UA_A_RCV_STATE:
+                        if (byte == FLAG_RCV) {
+                            state = UA_FLAG_RCV_STATE;
+                        } else if (byte == C_DISC) {
+                            state = UA_C_RCV_STATE;
+                        } else {
+                            state = UA_START_STATE;
+                        }
+                        break;
+                    case UA_C_RCV_STATE:
+                        if (byte == FLAG_RCV) {
+                            state = UA_FLAG_RCV_STATE;
+                        } else if (byte == (A_RCV ^ C_DISC)) {
+                            state = UA_BCC_OK_STATE;
+                        } else {
+                            state = UA_START_STATE;
+                        }
+                        break;
+                    case UA_BCC_OK_STATE:
+                        if (byte == FLAG_RCV) {
+                            state = UA_STOP_STATE;
+                            discReceived = TRUE;
+                        } else {
+                            state = UA_START_STATE;
+                        }
+                        break;
+                    case UA_STOP_STATE:
+                        break;
+                }
+            }
+
+            alarm(0); // Disable alarm
+
+            if (discReceived) {
+                printf("DISC response received\n");
+                
+                // Send UA frame
+                unsigned char uaFrame[5];
+                uaFrame[0] = FLAG;
+                uaFrame[1] = A_EMISSOR;
+                uaFrame[2] = C_UA;
+                uaFrame[3] = (A_EMISSOR ^ C_UA);
+                uaFrame[4] = FLAG;
+
+                writeBytesSerialPort(uaFrame, 5);
+                printf("UA frame sent\n");
+                
+                sleep(1); // Wait for UA to be sent
+                break;
+            }
+
+            attempts++;
+            printf("Timeout waiting for DISC response, attempt %d/%d\n", attempts, maxAttempts);
+        }
+
+        if (attempts >= maxAttempts) {
+            fprintf(stderr, "Failed to disconnect after %d attempts\n", maxAttempts);
+            closeSerialPort();
+            return -1;
+        }
+
+    } else if (connectionParameters.role == LlRx) { // Receiver
+        // Wait for DISC from transmitter
+        int state = SET_START_STATE;
+        unsigned char byte;
+
+        while (state != SET_STOP_STATE) {
+            if (readByteSerialPort(&byte) <= 0) {
+                continue;
+            }
+
+            switch (state) {
+                case SET_START_STATE:
+                    if (byte == FLAG_RCV) {
+                        state = SET_FLAG_RCV_STATE;
+                    }
+                    break;
+                case SET_FLAG_RCV_STATE:
+                    if (byte == A_TRANSMITTER) {
+                        state = SET_A_RCV_STATE;
+                    } else if (byte != FLAG_RCV) {
+                        state = SET_START_STATE;
+                    }
+                    break;
+                case SET_A_RCV_STATE:
+                    if (byte == C_DISC) {
+                        state = SET_C_RCV_STATE;
+                    } else if (byte == FLAG_RCV) {
+                        state = SET_FLAG_RCV_STATE;
+                    } else {
+                        state = SET_START_STATE;
+                    }
+                    break;
+                case SET_C_RCV_STATE:
+                    if (byte == (A_TRANSMITTER ^ C_DISC)) {
+                        state = SET_BCC_OK_STATE;
+                    } else if (byte == FLAG_RCV) {
+                        state = SET_FLAG_RCV_STATE;
+                    } else {
+                        state = SET_START_STATE;
+                    }
+                    break;
+                case SET_BCC_OK_STATE:
+                    if (byte == FLAG_RCV) {
+                        state = SET_STOP_STATE;
+                    } else {
+                        state = SET_START_STATE;
+                    }
+                    break;
+                case SET_STOP_STATE:
+                    break;
+            }
+        }
+
+        printf("DISC frame received\n");
+
+        // Send DISC response
+        unsigned char discFrame[5];
+        discFrame[0] = FLAG;
+        discFrame[1] = A_RCV;
+        discFrame[2] = C_DISC;
+        discFrame[3] = (A_RCV ^ C_DISC);
+        discFrame[4] = FLAG;
+
+        writeBytesSerialPort(discFrame, 5);
+        printf("DISC response sent\n");
+
+        // Wait for UA
+        state = SET_START_STATE;
+        while (state != SET_STOP_STATE) {
+            if (readByteSerialPort(&byte) <= 0) {
+                continue;
+            }
+
+            switch (state) {
+                case SET_START_STATE:
+                    if (byte == FLAG_RCV) {
+                        state = SET_FLAG_RCV_STATE;
+                    }
+                    break;
+                case SET_FLAG_RCV_STATE:
+                    if (byte == A_TRANSMITTER) {
+                        state = SET_A_RCV_STATE;
+                    } else if (byte != FLAG_RCV) {
+                        state = SET_START_STATE;
+                    }
+                    break;
+                case SET_A_RCV_STATE:
+                    if (byte == C_UA) {
+                        state = SET_C_RCV_STATE;
+                    } else if (byte == FLAG_RCV) {
+                        state = SET_FLAG_RCV_STATE;
+                    } else {
+                        state = SET_START_STATE;
+                    }
+                    break;
+                case SET_C_RCV_STATE:
+                    if (byte == (A_TRANSMITTER ^ C_UA)) {
+                        state = SET_BCC_OK_STATE;
+                    } else if (byte == FLAG_RCV) {
+                        state = SET_FLAG_RCV_STATE;
+                    } else {
+                        state = SET_START_STATE;
+                    }
+                    break;
+                case SET_BCC_OK_STATE:
+                    if (byte == FLAG_RCV) {
+                        state = SET_STOP_STATE;
+                    } else {
+                        state = SET_START_STATE;
+                    }
+                    break;
+                case SET_STOP_STATE:
+                    break;
+            }
+        }
+
+        printf("UA frame received\n");
+    } else {
+        fprintf(stderr, "Invalid role specified\n");
+        return -1;
+    }
+
+    // Close serial port
+    if (closeSerialPort() < 0) {
+        perror("closeSerialPort");
+        return -1;
+    }
+
+    printf("Connection closed successfully\n");
     return 0;
 }
