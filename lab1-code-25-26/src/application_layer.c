@@ -298,12 +298,14 @@ void receiveFile(LinkLayer connectionParameters, const char *filename) {
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
                       int nTries, int timeout, const char *filename)
 {
-    // Configure link layer parameters
+    // Configure link layer parameters, same as we
+    //-----------------------------------------------------
     LinkLayer connectionParameters;
     strcpy(connectionParameters.serialPort, serialPort);
     connectionParameters.baudRate = baudRate;
     connectionParameters.nRetransmissions = nTries;
     connectionParameters.timeout = timeout;
+    //------------------------------------------------------
     
     // Determine role and execute
     if (strcmp(role, "tx") == 0) {
