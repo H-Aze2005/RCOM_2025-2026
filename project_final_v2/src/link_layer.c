@@ -52,6 +52,8 @@ static int setup_connection_receiver(int fd);
 static void alarm_handler(int signal) {
     (void)signal;
     conn_state.alarm_triggered = 1;
+    printf("ALARM: Timeout triggered!\n");
+    fflush(stdout); 
 }
 
 static void configure_alarm_handler() {
@@ -131,7 +133,7 @@ static int receive_supervision_frame(int fd, unsigned char expected_ctrl) {
     enum { WAIT_FLAG, WAIT_ADDR, WAIT_CTRL, WAIT_BCC, WAIT_END } state = WAIT_FLAG;
     unsigned char addr, ctrl;
     
-    while (1) {
+    while (!conn_state.alarm_triggered) {
         if (read(fd, &byte, 1) != 1) continue;
         
         switch (state) {
