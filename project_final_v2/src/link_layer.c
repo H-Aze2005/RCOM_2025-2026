@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <time.h>
+#include <errno.h>
 
 // Frame delimiters and control bytes
 #define FRAME_FLAG 0x7E
@@ -45,6 +46,119 @@ static unsigned char calculate_bcc(const unsigned char *data, int length);
 static void alarm_handler(int signal);
 static int setup_connection_transmitter(int fd);
 static int setup_connection_receiver(int fd);
+
+////////////////////////////////////////////////
+// Safe I/O helpers (add after includes)
+////////////////////////////////////////////////
+
+/**
+ * write_all - write all bytes or fail (with retry on transient errors)
+ * Returns: number of bytes written, or -1 on fatal error
+ */
+static ssize_t write_all(int fd, const unsigned char *buf, size_t count) {
+    size_t written = 0;
+    int retry_limit = 50;  // Increased: allow ~10 seconds of retries
+    int retry_count = 0;
+    
+    while (written < count) {
+        ssize_t n = write(fd, buf + written, count - written);
+        if (n < 0) {
+            // Handle transient errors (retry)
+            if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK || errno == EIO) {
+                retry_count++;
+                if (retry_count >= retry_limit) {
+                    fprintf(stderr, "write_all: channel still down after %d retries\n", retry_count);
+                    return -1;
+                }
+                
+                // Backoff before retry
+                usleep(200000);  // 200ms (50 * 200ms = 10 seconds total)
+                continue;
+            }
+            
+            // Fatal error (bad FD, etc.)
+            perror("write_all");
+            return -1;
+        }
+        if (n == 0) {
+            // write returned 0 - unusual, but try again
+            usleep(200000);
+            retry_count++;
+            if (retry_count >= retry_limit) {
+                fprintf(stderr, "write_all: no progress after %d attempts\n", retry_count);
+                return written;  // Return partial write
+            }
+            continue;
+        }
+        
+        // Success - reset retry counter
+        written += n;
+        retry_count = 0;
+    }
+    return (ssize_t)written;
+}
+
+/**
+ * read_bytes - read exactly n bytes with timeout
+ * Returns: bytes read (< n if timeout), or -1 on error
+ * MUST check alarm_triggered to respect alarm(3) timeout
+ */
+static ssize_t read_bytes(int fd, unsigned char *buf, size_t count, int timeout_sec) {
+    size_t total_read = 0;
+    time_t start = time(NULL);
+    int retry_count = 0;
+    int retry_limit = timeout_sec * 20;  // 20 retries per second
+    
+    while (total_read < count) {
+        // CRITICAL: Check if alarm fired (respects alarm(3) call from llwrite)
+        if (conn_state.alarm_triggered) {
+            break;  // Timeout from alarm handler
+        }
+        
+        // Double-check with time-based timeout as backup
+        if (difftime(time(NULL), start) > timeout_sec) {
+            break;
+        }
+        
+        ssize_t n = read(fd, buf + total_read, count - total_read);
+        if (n < 0) {
+            // Handle transient errors
+            if (errno == EINTR) {
+                // Signal interrupted (likely our alarm) - check alarm_triggered
+                if (conn_state.alarm_triggered) break;
+                continue;
+            }
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EIO) {
+                retry_count++;
+                if (retry_count >= retry_limit) {
+                    break;
+                }
+                usleep(50000);  // 50ms backoff
+                continue;
+            }
+            
+            // Fatal error
+            perror("read_bytes");
+            return -1;
+        }
+        if (n == 0) {
+            // No data yet - check alarm before continuing
+            if (conn_state.alarm_triggered) break;
+            
+            retry_count++;
+            if (retry_count >= retry_limit) {
+                break;
+            }
+            usleep(50000);
+            continue;
+        }
+        
+        // Success
+        total_read += n;
+        retry_count = 0;
+    }
+    return (ssize_t)total_read;
+}
 
 ////////////////////////////////////////////////
 // Alarm handling
@@ -86,7 +200,8 @@ static int transmit_supervision_frame(int fd, unsigned char addr, unsigned char 
     frame[3] = addr ^ ctrl;
     frame[4] = FRAME_FLAG;
     
-    return write(fd, frame, 5) == 5 ? 0 : -1;
+    ssize_t result = write_all(fd, frame, 5);
+    return result == 5 ? 0 : -1;
 }
 
 static int build_information_frame(const unsigned char *data, int length, unsigned char *frame) {
@@ -267,76 +382,85 @@ int llwrite(const unsigned char *buf, int bufSize) {
     
     configure_alarm_handler();
     
-    for (conn_state.retry_count = 0; conn_state.retry_count < conn_state.max_retries; 
-         conn_state.retry_count++) {
+    int retry_count = 0;
+    while (retry_count < conn_state.max_retries) {
+        printf("Attempt %d/%d: sending frame (%d bytes)...\n", 
+               retry_count + 1, conn_state.max_retries, frame_size);
         
-        // Send frame
-        int bytes_written = write(conn_state.fd, frame, frame_size);
+        // Send frame with robust I/O (write_all now retries EIO)
+        ssize_t bytes_written = write_all(conn_state.fd, frame, frame_size);
         if (bytes_written != frame_size) {
-            printf("Write error: sent %d/%d bytes\n", bytes_written, frame_size);
+            // write_all failed after internal retries - this is likely fatal
+            printf("Write failed after retries (sent %ld/%d bytes)\n", bytes_written, frame_size);
+            retry_count++;
+            
+            // Don't give up immediately - the alarm/retry logic may still recover
+            if (bytes_written < 0) {
+                // Total write failure - wait longer before next attempt
+                sleep(1);
+            } else {
+                // Partial write - shorter backoff
+                usleep(500000);  // 500ms
+            }
             continue;
         }
         
-        // Wait for response
+        // Wait for RR/REJ response with timeout
         conn_state.alarm_triggered = 0;
         alarm(conn_state.timeout_duration);
         
-        unsigned char response[5];
-        int response_idx = 0;
-        time_t start_time = time(NULL);
+        unsigned char response[5] = {0};
+        ssize_t bytes_read = read_bytes(conn_state.fd, response, 5, conn_state.timeout_duration);
+        alarm(0);
         
-        while (!conn_state.alarm_triggered) {
-            unsigned char byte;
-            if (read(conn_state.fd, &byte, 1) == 1) {
-                response[response_idx++] = byte;
-                
-                // Check if we have a complete supervision frame
-                if (response_idx == 5 && response[4] == FRAME_FLAG) {
-                    alarm(0);
-                    
-                    unsigned char addr = response[1];
-                    unsigned char ctrl = response[2];
-                    unsigned char bcc = response[3];
-                    
-                    // Verify BCC
-                    if (bcc != (addr ^ ctrl)) {
-                        break; // Invalid frame, will retry
-                    }
-                    
-                    // Check for RR with correct sequence
-                    if (ctrl == CTRL_RR(!conn_state.current_sequence)) {
-                        conn_state.current_sequence = !conn_state.current_sequence;
-                        return bufSize;
-                    }
-                    
-                    // Check for REJ - resend immediately
-                    if (ctrl == CTRL_REJ(conn_state.current_sequence)) {
-                        printf("Received REJ, retrying...\n");
-                        break;
-                    }
-                }
-                
-                // Reset if we get a FLAG in the middle
-                if (byte == FRAME_FLAG && response_idx < 5) {
-                    response[0] = byte;
-                    response_idx = 1;
-                }
-            }
-            
-            // Timeout check
-            if (difftime(time(NULL), start_time) > conn_state.timeout_duration) {
-                break;
-            }
+        if (bytes_read < 5) {
+            printf("Incomplete response (%ld bytes), timeout or error\n", bytes_read);
+            retry_count++;
+            usleep(200000);
+            continue;
         }
         
-        alarm(0);
-        printf("Timeout or error on attempt %d/%d\n", 
-               conn_state.retry_count + 1, conn_state.max_retries);
+        // Validate response frame structure
+        if (response[0] != FRAME_FLAG || response[4] != FRAME_FLAG) {
+            printf("Invalid response frame structure\n");
+            retry_count++;
+            continue;
+        }
+        
+        unsigned char addr = response[1];
+        unsigned char ctrl = response[2];
+        unsigned char bcc = response[3];
+        
+        // Verify BCC
+        if (bcc != (addr ^ ctrl)) {
+            printf("Response BCC error\n");
+            retry_count++;
+            continue;
+        }
+        
+        // Handle RR - success, toggle sequence
+        if (ctrl == CTRL_RR(!conn_state.current_sequence)) {
+            printf("Received RR (seq %d), frame accepted\n", !conn_state.current_sequence);
+            conn_state.current_sequence = !conn_state.current_sequence;
+            return bufSize;
+        }
+        
+        // Handle REJ - resend same frame (but count as retry)
+        if (ctrl == CTRL_REJ(conn_state.current_sequence)) {
+            printf("Received REJ (seq %d), retransmitting...\n", conn_state.current_sequence);
+            retry_count++;
+            usleep(200000);
+            continue;
+        }
+        
+        printf("Unexpected control byte: 0x%02X\n", ctrl);
+        retry_count++;
     }
     
     printf("Failed to send frame after %d attempts\n", conn_state.max_retries);
     return -1;
 }
+
 int llread(unsigned char *packet) {
     unsigned char frame[MAX_PAYLOAD_SIZE * 2 + 10];
     int frame_idx = 0;
