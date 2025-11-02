@@ -41,7 +41,6 @@ static ConnectionState conn_state = {-1, LlTx, 3, 3, 0, 0, 0};
 static int transmit_supervision_frame(int fd, unsigned char addr, unsigned char ctrl);
 static int receive_supervision_frame(int fd, unsigned char expected_ctrl);
 static int build_information_frame(const unsigned char *data, int length, unsigned char *frame);
-static int extract_frame_data(const unsigned char *frame, int frame_len, unsigned char *data);
 static unsigned char calculate_bcc(const unsigned char *data, int length);
 static void alarm_handler(int signal);
 static int setup_connection_transmitter(int fd);
@@ -277,35 +276,6 @@ static int receive_supervision_frame(int fd, unsigned char expected_ctrl) {
         }
     }
     return -1;
-}
-
-static int extract_frame_data(const unsigned char *frame, int frame_len, unsigned char *data) {
-    int data_idx = 0;
-    int stuffed = 0;
-    
-    // Skip header (flag, addr, ctrl, bcc1)
-    for (int i = 4; i < frame_len - 1; i++) {
-        if (frame[i] == FRAME_FLAG) break;
-        
-        if (stuffed) {
-            data[data_idx++] = frame[i] ^ 0x20;
-            stuffed = 0;
-        } else if (frame[i] == ESCAPE_BYTE) {
-            stuffed = 1;
-        } else {
-            data[data_idx++] = frame[i];
-        }
-    }
-    
-    // Last byte is BCC2
-    if (data_idx > 0) {
-        unsigned char bcc2 = data[--data_idx];
-        unsigned char calculated_bcc = calculate_bcc(data, data_idx);
-        
-        if (bcc2 != calculated_bcc) return -1;
-    }
-    
-    return data_idx;
 }
 
 ////////////////////////////////////////////////

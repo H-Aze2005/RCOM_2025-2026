@@ -23,8 +23,6 @@ typedef struct {
     int sequence_number;
 } TransferContext;
 
-static TransferContext transfer_ctx = {0};
-
 ////////////////////////////////////////////////
 // Control packet builders
 ////////////////////////////////////////////////
@@ -87,19 +85,6 @@ static int build_data_packet(int seq_num, const unsigned char *data,
     memcpy(&packet[idx], data, data_len);
     
     return idx + data_len;
-}
-
-static int parse_data_packet(const unsigned char *packet, int length,
-                            int *seq_num, unsigned char *data) {
-    if (length < 4 || packet[0] != PKT_TYPE_DATA) return -1;
-    
-    *seq_num = packet[1];
-    int data_len = (packet[2] << 8) | packet[3];
-    
-    if (data_len + 4 > length) return -1;
-    
-    memcpy(data, &packet[4], data_len);
-    return data_len;
 }
 
 ////////////////////////////////////////////////
@@ -180,7 +165,6 @@ static int receive_file_contents(int fd, FILE *file, long expected_size) {
         }
         
         // Parse data packet
-        int seq_num = packet_buffer[1];
         int data_len = (packet_buffer[2] << 8) | packet_buffer[3];
         
         if (data_len + 4 > packet_len) {
