@@ -17,10 +17,10 @@
 #include <time.h>
 #include <unistd.h>
 
-#define TXDEV "/dev/ttyS10"
-#define RXDEV "/dev/ttyS11"
-#define TX_EMULATOR "/dev/emulatorTx"
-#define RX_EMULATOR "/dev/emulatorRx"
+#define TXDEV "/tmp/ttyS10"
+#define RXDEV "/tmp/ttyS11"
+#define TX_EMULATOR "/tmp/emulatorTx"
+#define RX_EMULATOR "/tmp/emulatorRx"
 
 // Baudrate settings are defined in <asm/termbits.h>, which is
 // included by <termios.h>
@@ -137,10 +137,15 @@ void set_baud_rate(unsigned long baud)
 
 // Make the program use RT priority to improve precision in timing
 void set_rt_priority(void) {
+#ifdef __linux__
     struct sched_param sp = { .sched_priority = 50 };
     if (sched_setscheduler(0, SCHED_FIFO, &sp) == -1) {
       perror("Could not set realtime priority");
     }
+#else
+    // Real-time scheduling not available on macOS
+    // The program will still work, just with potentially less precise timing
+#endif
 }
 
 
