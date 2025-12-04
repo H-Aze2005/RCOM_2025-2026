@@ -62,7 +62,7 @@ From tuxY3 ping the other network interfaces (172.16.Y0.254, 172.16.Y1.253, 172.
 
 Stop the capture and save the logs
 
-[Wireshark capture log](logs/exp2_passos_5_6_7.pcapng)
+[Wireshark capture log](logs/exp3_passos_5_6_7.pcapng)
 
 ## Step 8
 
