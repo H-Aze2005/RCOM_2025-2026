@@ -17,10 +17,18 @@ Configure the IP addresses of RC through the router serial console
 ```
 
 ## Step 2
+Verify routes and add if necessary:
+- in tuxY3 routes for 172.16.Y1.0/24 and 172.16.1.0/24
+- in tuxY4 route for 172.16.1.0/24
+- in tuxY2 routes for 172.16.Y0.0/24 and 172.16.1.0/24
+- in Rc add route for 172.16.Y0.0/24
 
+```bash
+sudo route add -net <destination address> gw <gateway address>
+```
 
 ## Step 3
-
+Using ping commands and Wireshark, verify if tuxY3 can ping all the network interfaces of tuxY2, tuxY4 and Rc
 
 ## Step 4
 
