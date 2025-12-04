@@ -1,4 +1,4 @@
-# Experiment 1
+# Experiment 1 - Configure an IP Network
 
 ## Step 1
 Connect cables between machines and the switch where Y is the bench number
@@ -53,4 +53,4 @@ Stop capturing packets
 ## Step 10
 Save the log
 
--> INSERT LINK TO LOG <-
+[Wireshark capture log](../logs/exp1_passos7_8_9.pcapng)
