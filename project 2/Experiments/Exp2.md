@@ -62,3 +62,10 @@ Repeat steps 7 - 8 - 9 but now do
 ```bash
 sudo ping -b 172.16.Y1.255
 ```
+
+[Wireshark capture log tuxY2](logs/exp2_passo_10_tuxY2.pcapng)
+
+[Wireshark capture log tuxY3](logs/exp2_passo_10__tuxY3.pcapng)
+
+[Wireshark capture log tuxY4](logs/exp2_passo_10_tuxY4.pcapng)
+
