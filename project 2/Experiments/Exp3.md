@@ -64,13 +64,18 @@ Stop the capture and save the logs
 
 [Wireshark capture log](logs/exp3_passos_5_6_7.pcapng)
 
-## Step 8
+## Step 8 - 9 - 10 - 11
+Start capture in tuxY4; use 2 instances of Wireshark, one per network interface (e1 and e2)
 
+Clean the ARP tables in the 3 tuxes
+```bash
+sudo arp -d <address>
+```
 
-## Step 9
+In tuxY3, ping tuxY2 for a few seconds
 
+Stop capture in tuxY4 and save the logs
 
-## Step 10
+[Wireshark capture log E1](logs/exp3_passos_8_9_10_11_e1.pcapng)
 
-
-## Step 11
+[Wireshark capture log E2](logs/exp3_passos_8_9_10_11_e2.pcapng)
