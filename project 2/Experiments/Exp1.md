@@ -44,7 +44,7 @@ sudo arp -d 172.16.Y0.254
 ```
 
 ## Step 7 - 8 - 9
-Start Wireshark in tuxY3.if_el and start capturing packets
+Start Wireshark in tuxY3.if_e1 and start capturing packets
 
 In tuxY3, ping tuxY4 for a few seconds
 
