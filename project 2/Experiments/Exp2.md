@@ -69,3 +69,7 @@ sudo ping -b 172.16.Y1.255
 
 [Wireshark capture log tuxY4](logs/exp2_passo_10_tuxY4.pcapng)
 
+## Questions
+
+- How to configure bridgeY0?
+- How many broadcast domains are there? How can you conclude it from the logs?
