@@ -53,4 +53,4 @@ Stop capturing packets
 ## Step 10
 Save the log
 
-[Wireshark capture log](logs/exp1_passos7_8_9.pcapng)
+[Wireshark capture log](logs/exp1_passos_7_8_9.pcapng)

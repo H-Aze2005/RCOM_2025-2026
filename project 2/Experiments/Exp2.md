@@ -42,7 +42,7 @@ In tuxY3, ping tuxY4 and then ping tuxY2
 
 Stop the capture and save the log
 
-[Wireshark capture log](logs/exp2_passos4_5_6.pcapng)
+[Wireshark capture log](logs/exp2_passos_4_5_6.pcapng)
 
 ## Step 7 - 8 - 9
 Start new captures in tuxY2.if_e1, tuxY3.if_e1, tuxY4.if_e1
@@ -51,11 +51,11 @@ In tuxY3, do ping broadcast (**ping -b 172.16.Y0.255**) for a few seconds
 
 Stop the captures and save the logs
 
-[Wireshark capture log tuxY2](logs/exp2_passos7_8_9_tuxY2.pcapng)
+[Wireshark capture log tuxY2](logs/exp2_passos_7_8_9_tuxY2.pcapng)
 
-[Wireshark capture log tuxY3](logs/exp2_passos7_8_9_tuxY3.pcapng)
+[Wireshark capture log tuxY3](logs/exp2_passos_7_8_9_tuxY3.pcapng)
 
-[Wireshark capture log tuxY4](logs/exp2_passos7_8_9_tuxY4.pcapng)
+[Wireshark capture log tuxY4](logs/exp2_passos_7_8_9_tuxY4.pcapng)
 
 ## Step 10
 Repeat steps 7 - 8 - 9 but now do 
