@@ -14,9 +14,9 @@ Connect ether1 of Rc to the lab network on the PY.24 (**with NAT enabled by defa
 
 Configure the IP addresses of RC through the router serial console
 ```bash
-/ip address add address=172.16.Y1.254/24 interface=ether1
+/ip address add address=172.16.1.Y1/24 interface=ether1
 
-/ip address add address=172.16.1.Y1/24 interface=ether2
+/ip address add address=172.16.Y1.254/24 interface=ether2
 ```
 
 ## Step 2
@@ -32,8 +32,22 @@ gateways are added on the opposite side to the router
 sudo route add -net <destination address> gw <gateway address>
 ```
 
+On the GtkTerm connected to the router
+
+```bash
+/ip route add dst-address=172.16.Y0.0/24 gateway=172.16.Y1.253
+```
+
 ## Step 3
 Using ping commands and Wireshark, verify if tuxY3 can ping all the network interfaces of tuxY2, tuxY4 and Rc
+
+**On tuxY3**
+
+Start Wireshark capture and ping:
+
+- ping 172.16.Y0.254
+- ping 172.16.Y1.1
+- ping 172.16.Y1.254
 
 ## Step 4
 
