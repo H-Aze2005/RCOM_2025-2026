@@ -14,9 +14,9 @@ Connect ether1 of Rc to the lab network on the PY.24 (**with NAT enabled by defa
 
 Configure the IP addresses of RC through the router serial console
 ```bash
-/ip address add address=172.16.1.Y0/24 interface=ether1
+/ip address add address=172.16.Y1.254/24 interface=ether1
 
-/ip address add address=172.16.1.Y1.254/24 interface=ether2
+/ip address add address=172.16.1.Y1/24 interface=ether2
 ```
 
 ## Step 2
