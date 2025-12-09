@@ -94,6 +94,8 @@ int parsePasvMode(char *response)
 
 // download will function with 2 sockets, control and data channels!
 // first handle Control connection, then Data Connection
+
+// We can use a somewhat "state machine" for all the necessary steps!
 int download(struct URL url)
 {
     char buffer[1024];  // buffer for server responses
@@ -216,6 +218,7 @@ int getIP(char *hostname, struct URL *url)
     return 0;
 }
 
+// we first need to break the input URL into pieces!
 int main(int argc, char **argv)
 {
     if (argc != 2)
@@ -238,6 +241,7 @@ int main(int argc, char **argv)
     url.user = strtok(credentials, ":");
     url.password = strtok(NULL, "@");
 
+    // if no user/password is provided, it then defaults to anonymous
     if (url.password == NULL)
     {
         url.host = url.user;
@@ -252,11 +256,6 @@ int main(int argc, char **argv)
 
     printf("DEBUG: Host to resolve: '%s'\n", url.host);
 
-    // debug
-    //  printf("user: %s\n", url.user);
-    //  printf("password: %s\n", url.password);
-    //  printf("host: %s\n", url.host);
-    //  printf("path: %s\n", url.path);
 
     if (getIP(url.host, &url) < 0)
     {
