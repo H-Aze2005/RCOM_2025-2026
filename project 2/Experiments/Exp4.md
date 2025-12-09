@@ -26,6 +26,8 @@ Verify routes and add if necessary:
 - in tuxY2 routes for 172.16.Y0.0/24 and 172.16.1.0/24
 - in Rc add route for 172.16.Y0.0/24
 
+gateways are added on the opposite side to the router
+
 ```bash
 sudo route add -net <destination address> gw <gateway address>
 ```
