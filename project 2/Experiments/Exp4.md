@@ -49,8 +49,28 @@ Start Wireshark capture and ping:
 - ping 172.16.Y1.1
 - ping 172.16.Y1.254
 
-## Step 4
+[Wireshark capture log](logs/exp4_passos_3.pcapng)
 
+## Step 4
+no tuxY2:  
+* echo 0 \> /proc/sys/net/ipv4/conf/eth1/accept\_redirects  
+* echo 0 \> /proc/sys/net/ipv4/conf/all/accept\_redirects  
+* route del –net 172.16.Y0.0 gw 172.16.Y1.253 netmask 255.255.255.0  
+* route add \-net 172.16.Y0.0/24 gw 172.16.Y1.254   
+* ping 172.16.Y0.1  
+* **começar captura de wireshark dentro do tuxY2**  
+* traceroute \-n 172.16.Y0.1  
+* **acabar captura de wireshark dentro do tuxY2**  
+* route del –net 172.16.Y0.0 gw 172.16.Y1.254 netmask 255.255.255.0	  
+* route add \-net 172.16.Y0.0/24 gw 172.16.Y1.253  
+* **começar captura de wireshark dentro do tuxY2**  
+* traceroute \-n 172.16.Y0.1  
+* **acabar captura de wireshark dentro do tuxY2**  
+* **começar captura de wireshark dentro do tuxY2**  
+* echo 1 \> /proc/sys/net/ipv4/conf/eth1/accept\_redirects  
+* echo 1 \> /proc/sys/net/ipv4/conf/all/accept\_redirects  
+* traceroute \-n 172.16.Y0.1  
+* **acabar captura de wireshark dentro do tuxY2**  
 
 ## Step 5
 
