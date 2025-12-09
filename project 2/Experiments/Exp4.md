@@ -53,33 +53,54 @@ Start Wireshark capture and ping:
 
 ## Step 4
 no tuxY2:  
-* echo 0 \> /proc/sys/net/ipv4/conf/eth1/accept\_redirects  
-* echo 0 \> /proc/sys/net/ipv4/conf/all/accept\_redirects  
-* route del –net 172.16.Y0.0 gw 172.16.Y1.253 netmask 255.255.255.0  
-* route add \-net 172.16.Y0.0/24 gw 172.16.Y1.254   
-* ping 172.16.Y0.1  
-* **começar captura de wireshark dentro do tuxY2**  
-* traceroute \-n 172.16.Y0.1  
-* **acabar captura de wireshark dentro do tuxY2**  
-* route del –net 172.16.Y0.0 gw 172.16.Y1.254 netmask 255.255.255.0	  
-* route add \-net 172.16.Y0.0/24 gw 172.16.Y1.253  
-* **começar captura de wireshark dentro do tuxY2**  
-* traceroute \-n 172.16.Y0.1  
-* **acabar captura de wireshark dentro do tuxY2**  
-* **começar captura de wireshark dentro do tuxY2**  
-* echo 1 \> /proc/sys/net/ipv4/conf/eth1/accept\_redirects  
-* echo 1 \> /proc/sys/net/ipv4/conf/all/accept\_redirects  
-* traceroute \-n 172.16.Y0.1  
-* **acabar captura de wireshark dentro do tuxY2**  
+- echo 0 \> /proc/sys/net/ipv4/conf/eth1/accept\_redirects  
+- echo 0 \> /proc/sys/net/ipv4/conf/all/accept\_redirects  
+- route del –net 172.16.Y0.0 gw 172.16.Y1.253 netmask 255.255.255.0  
+- route add \-net 172.16.Y0.0/24 gw 172.16.Y1.254   
+- **start capture in wireshark in tuxY2**  
+- traceroute \-n 172.16.Y0.1  
+- **finish capture in wireshark in tuxY2**  
+- route del –net 172.16.Y0.0 gw 172.16.Y1.254 netmask 255.255.255.0	  
+- route add \-net 172.16.Y0.0/24 gw 172.16.Y1.253  
+- **start capture in wireshark in tuxY2**  
+- traceroute \-n 172.16.Y0.1  
+- **finish capture in wireshark in tuxY2**  
+- **start capture in wireshark in tuxY2**  
+- echo 1 \> /proc/sys/net/ipv4/conf/eth1/accept\_redirects  
+- echo 1 \> /proc/sys/net/ipv4/conf/all/accept\_redirects  
+- traceroute \-n 172.16.Y0.1  
+- **finish capture in wireshark in tuxY2**  
+
+[Wireshark capture log 1](logs/exp4_passos_4_log1.pcapng)
+
+[Wireshark capture log 2](logs/exp4_passos_4_log2.pcapng)
+
+[Wireshark capture log 3](logs/exp4_passos_4_log3.pcapng)
+
+[Wireshark capture log 4](logs/exp4_passos_4_log4.pcapng)
 
 ## Step 5
+In tuxY3, ping the FTP server (172.16.1.10) and try to understand what happens
 
+- ping 172.16.1.10 
 
 ## Step 6
+Disable NAT functionality in router RC
 
+on the GtkTerm connected to the router: 
+```bash
+/ip firewall nat disable 0 
+```
 
 ## Step 7
+In tuxY3 ping 172.16.1.10, verify if there is connectivity, and try to understand what happens
 
+**in tuxY3:**  
+- ping 172.16.1.10  
+
+**reenable firewall**
+on the GtkTerm connected to the router:
+* /ip firewall nat enable 0
 
 ## Questions
 
