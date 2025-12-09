@@ -4,7 +4,7 @@
 Connect cables between machines and the switch where Y is the bench number
 - tuxY4_E2 -> 8
 
-**On tuxY3 run**
+**On tuxY4 run**
 ```bash
 sudo ifconfig if_e2 172.16.Y0.253/24
 ```
