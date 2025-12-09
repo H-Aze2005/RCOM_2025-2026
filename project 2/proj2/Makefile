@@ -1,13 +1,22 @@
 CC = gcc
-CFLAGS = -Wall
+CFLAGS = -Wall -Wextra -D_GNU_SOURCE
 
-SRC = src/
-BIN = bin/
+SRC = src
+BIN = bin
 
-URL = ftp://rcom:rcom123@ftp.up.pt/pub/asdasd/ficheiro.txt
+# Default URL (can be overridden via command line)
+URL = ftp://demo:password@test.rebex.net/readme.txt    
+#ftp://ftp.up.pt/pub/kodi/timestamp.txt
+# make run_download URL="ftp://ftp.up.pt/pub/kodi/timestamp.txt"
 
-.PHONY: all
-all: $(BIN)/getIP $(BIN)/clientTCP $(BIN)/download
+.PHONY: all clean run_download
+
+# $(BIN) as a dependency to ensure the folder exists
+all: $(BIN) $(BIN)/getIP $(BIN)/clientTCP $(BIN)/download
+
+# Rule to create the bin directory if it doesn't exist
+$(BIN):
+	mkdir -p $(BIN)
 
 $(BIN)/download: $(SRC)/download.c
 	$(CC) $(CFLAGS) -o $@ $^
@@ -18,12 +27,8 @@ $(BIN)/getIP: $(SRC)/getip.c
 $(BIN)/clientTCP: $(SRC)/clientTCP.c
 	$(CC) $(CFLAGS) -o $@ $^
 
-.PHONY: clean
 clean:
-	rm -f $(BIN)/getIP
-	rm -f $(BIN)/clientTCP
-	rm -f $(BIN)/download
+	rm -rf $(BIN)/*
 
-.PHONY: run_download
 run_download: $(BIN)/download
 	./$(BIN)/download $(URL)
