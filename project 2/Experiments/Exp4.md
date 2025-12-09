@@ -1,6 +1,9 @@
 # Experiment 4 - Configure a Commercial Router and Implement NAT
 
 ## Step 1
+
+Rc_e2 -> ether24
+
 Connect ether1 of Rc to the lab network on the PY.24 (**with NAT enabled by default**) and the ether2 of Rc to a port on bridgeY1.
 
 ```bash
