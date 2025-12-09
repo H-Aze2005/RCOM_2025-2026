@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -D_GNU_SOURCE
+CFLAGS = -Wall -Wextra -D_GNU_SOURCE -static-libgcc
 
 SRC = src
 BIN = bin
