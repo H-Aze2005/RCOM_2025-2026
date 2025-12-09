@@ -6,7 +6,7 @@ Connect cables between machines and the switch where Y is the bench number
 
 **On tuxY4 run**
 ```bash
-sudo ifconfig if_e2 172.16.Y0.253/24
+sudo ifconfig if_e2 172.16.Y1.253/24
 ```
 
 **Add it to bridgeY1 on E2**
