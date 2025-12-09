@@ -30,9 +30,9 @@ Remove the ports where tuxY3, tuxY4 and tuxY2 are connected from the default bri
 /interface bridge port remove [find interface=ether4]
 /interface bridge port remove [find interface=ether5]
 
-/interface bridge add bridge=bridgeY0 interface=ether4
-/interface bridge add bridge=bridgeY0 interface=ether4
-/interface bridge add bridge=bridgeY1 interface=ether5
+/interface bridge port add bridge=bridgeY0 interface=ether4
+/interface bridge port add bridge=bridgeY0 interface=ether4
+/interface bridge port add bridge=bridgeY1 interface=ether5
 ```
 
 ## Step 4 - 5 - 6
