@@ -120,6 +120,7 @@ int download(struct URL url)
 
     // 3. Authenicate (USER -> 331 -> PASS -> 230)
     sprintf(command, "USER %s\r\n", url.user);
+    printf("C: USER %s\n", url.user); 
     write(sockfd_control, command, strlen(command));
     if (readResponse(sockfd_control, buffer, sizeof(buffer)) != 331)
     {
@@ -129,6 +130,7 @@ int download(struct URL url)
 
     // 3.2 To see if the USER passes or not
     sprintf(command, "PASS %s\r\n", url.password);
+    printf("C: PASS %s\n", url.password);
     write(sockfd_control, command, strlen(command));
     if (readResponse(sockfd_control, buffer, sizeof(buffer)) != 230)
     {
@@ -251,7 +253,7 @@ int main(int argc, char **argv)
     }
     else
     {
-        url.host = strtok(NULL, "/");
+        url.host = strtok(NULL, "");
     }
 
     printf("DEBUG: Host to resolve: '%s'\n", url.host);
