@@ -65,7 +65,7 @@ int readResponse(int socket, char *buffer, size_t buffer_size)
     // Read line by line until we get the final response line
     while (fgets(buffer, buffer_size, fp) != NULL)
     {
-        printf("S: %s", buffer); // Debug to show what the server sent
+        printf("S: %s", buffer); // show what the server sent
 
         // Check if line starts with 3 digits followed by a space
         if (sscanf(buffer, "%d ", &code) == 1 && buffer[3] == ' ')
