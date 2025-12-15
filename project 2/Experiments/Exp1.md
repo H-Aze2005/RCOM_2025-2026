@@ -29,7 +29,7 @@ sudo ifconfig if_e1 172.16.Y0.254/24
 ## Step 4
 **On tuxY4 use the ping command to verify connectivity**
 ```bash
-sudo ping 172.16.10.1
+sudo ping 172.16.Y0.1
 ```
 
 ## Step 5
